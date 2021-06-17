@@ -21,56 +21,98 @@
 
 import bpy
 import os
+import tempfile
 import time
 import glob
 import hashlib
 import struct
 import shutil
 
-from bpy.props import BoolProperty, FloatProperty, StringProperty, EnumProperty
+from bpy.props import (BoolProperty, FloatProperty, StringProperty, EnumProperty)
 
-class DoppleRenderOperator(bpy.types.Operator):
-    bl_idname = "render.dopplerender"
+#make class for storing all the properties needed for the plugin
+class DoppleRenderProperties(bpy.types.PropertyGroup):
+    dopplerender_thumbsize: bpy.props.FloatProperty(
+        name="Thumbnail Reduction",
+        description="Percentage scale of thumbnail size for frame comparison",
+        default=5,
+        min=1,
+        max=100,
+        subtype='PERCENTAGE'
+    )
+
+    dopplerender_thumbpath: bpy.props.StringProperty(
+        name="Thumbnail Render Directory",
+        subtype='FILE_PATH',
+        default=os.path.join(tempfile.gettempdir(), "dopthumbs", "tiny####.png")
+    )
+
+    dopplerender_copytype: bpy.props.EnumProperty(
+        name = "Frame copying",
+        description = "Frame duplication method",
+        default = 'COPY',
+        items =
+        [
+            ('SYMLINK', "Symlink", "Symbolic Link duplicate frame files"),
+            ('COPY', "Copy", "Copy duplicate frame files")
+            
+        ]
+    )
+
+class DOPPLERENDER_OT_render(bpy.types.Operator):
+    bl_idname = "dopplerender.render"
     bl_label = "DoppleRender Process"
     bl_options = {'REGISTER'}
 
     def execute(self, context):
+        #store active/selected scene to variable
+        scene = context.scene
+        
+        #allow access to user inputted properties through pointer
+        #to properties
+        dopplerendertool = scene.dopplerender_tool
         self.report({'INFO'}, "doppleOp execute()!")
         # print("Dopplerender EXECUTE called.")
-        dopplerender_process(context)
+        dopplerender_process(context, dopplerendertool)
         return {'FINISHED'}
 
     def invoke(self, context, event):
+        #store active/selected scene to variable
+        scene = context.scene
+        
+        #allow access to user inputted properties through pointer
+        #to properties
+        dopplerendertool = scene.dopplerender_tool
         self.report({'INFO'}, "doppleOp invoke()!")
         # print("Dopplerender INVOKE called.")
-        dopplerender_process(context)
+        dopplerender_process(context, dopplerendertool)
         return {'FINISHED'}
 
 #####################################
 
 
-def dopplerender_process(context):
+def dopplerender_process(context, dopplerendertool):
 
     pre_thumbs = time.time()
-    render_thumbnails(context)
+    render_thumbnails(context, dopplerendertool)
     post_thumbs = time.time()
     thumb_time = post_thumbs - pre_thumbs
 
-    doppel_sets = checksum_thumbnails(context)
+    doppel_sets = checksum_thumbnails(context, dopplerendertool)
     post_checksums = time.time()
     checksum_time = post_checksums - post_thumbs
 
     preprocess_time = checksum_time + thumb_time
     unique_frame_count = len(doppel_sets)
     
-    render_full(context, doppel_sets, preprocess_time)
+    render_full(context, doppel_sets, dopplerendertool, preprocess_time)
     rendercopy_time = time.time() - post_checksums
 
     print("Timings: thumbnails: %.03f, checksums: %.03f, render %d fully+clone: %.03f" % (thumb_time, checksum_time, unique_frame_count, rendercopy_time))
     print("== DoppleRender Finished ==")
 
 
-def render_thumbnails(context):
+def render_thumbnails(context, dopplerendertool):
     prior_settings = {}
 
     # Might not need to loop all scenes?
@@ -84,8 +126,8 @@ def render_thumbnails(context):
             'cycles.use_animated_seed': scene.cycles.use_animated_seed
         }
 
-    context.scene.render.filepath = context.scene.dopplerender_thumbpath
-    context.scene.render.resolution_percentage = context.scene.dopplerender_thumbsize
+    context.scene.render.filepath = dopplerendertool.dopplerender_thumbpath
+    context.scene.render.resolution_percentage = dopplerendertool.dopplerender_thumbsize
     context.scene.cycles.samples = 20
     context.scene.cycles.use_animated_seed = False
 
@@ -100,8 +142,8 @@ def render_thumbnails(context):
         sc.render.filepath = settings['render.filepath']
 
 
-def checksum_thumbnails(context):
-    tpath, tpattern = os.path.split(context.scene.dopplerender_thumbpath)
+def checksum_thumbnails(context, dopplerendertool):
+    tpath, tpattern = os.path.split(dopplerendertool.dopplerender_thumbpath)
     hashpat = tpattern.count("#") * "#"
     tmatch = tpattern.replace(hashpat, "*")
     tframes = glob.glob(os.path.join(tpath, tmatch))    # list all frames of the current? render.
@@ -167,7 +209,7 @@ def framenum_to_filepath(frnum, ftemplate=''):
     return ftemplate.replace('#'*numdigits, framenum_str)
 
 
-def render_full(context, doppel_sets, preprocesstime=None):
+def render_full(context, doppel_sets, dopplerendertool, preprocesstime=None):
     # render the first frame of each doppel_set; clone core frames to fill out the sets.
     # print(doppel_sets)
     render_frames = sorted([fnums[0] for fnums in doppel_sets])
@@ -205,7 +247,7 @@ def render_full(context, doppel_sets, preprocesstime=None):
     clonecount = 0
     clonetimes = []
     # use_symlinks option... Copy method: Copy file | SymLink (toggle buttons)
-    do_copy = context.scene.dopplerender_copytype == 'COPY'
+    do_copy = dopplerendertool.dopplerender_copytype == 'COPY'
     for dopset in doppel_sets:
         corefilenum = dopset[0]
         corefilepath = framenum_to_filepath(corefilenum, fullrender_pathtemplate)
@@ -232,21 +274,55 @@ def render_full(context, doppel_sets, preprocesstime=None):
 #####################################
 
 
-class DoppleRenderPanel(bpy.types.Panel):
+class DOPPLERENDER_PT_main_panel(bpy.types.Panel):
     """Creates a Panel in the render context of the properties editor"""
     bl_label = "DoppleRender"
-    bl_idname = "RENDER_PT_dopplerender"
+    bl_idname = "DOPPLERENDER_PT_main_panel"
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "render"
 
     def draw(self, context):
+        #store active/selected scene to variable
+        scene = context.scene
+        
+        #allow access to user inputted properties through pointer
+        #to properties
+        dopplerendertool = scene.dopplerender_tool
+
         row = self.layout.row()
         # props = row.operator(DoppleRenderOperator.bl_idname, icon="RENDER_ANIMATION", text="Animation")
-        row.operator("render.dopplerender", icon="RENDER_ANIMATION", text="Animation")
+        row.operator("dopplerender.render", icon="RENDER_ANIMATION", text="Animation")
 
         row = self.layout.row()
-        row.prop(context.scene, "dopplerender_thumbsize")
+        row.prop(dopplerendertool, "dopplerender_thumbsize")
 
         row = self.layout.row()
-        row.prop(context.scene, "dopplerender_copytype", expand=True)
+        row.prop(dopplerendertool, "dopplerender_copytype", expand=True)
+
+
+
+classes = [DoppleRenderProperties, DOPPLERENDER_PT_main_panel, DOPPLERENDER_OT_render]
+ 
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+        
+    #register dopplerendertool as a type which has all
+    #the user input properties from the properties class 
+    bpy.types.Scene.dopplerender_tool = bpy.props.PointerProperty(type = DoppleRenderProperties)
+ 
+ 
+def unregister():    
+
+    #unregister in reverse order to registered so classes relying on other classes
+    #will not lead to an error
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+    
+    #unregister dopplerender_tool as a type
+    del bpy.types.Scene.dopplerender_tool
+
+    
+if __name__ == "__main__":
+    register()

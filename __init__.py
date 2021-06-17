@@ -18,56 +18,26 @@
 ############# END GPL 3.0 LICENSE BLOCK ################################
 
 # <pep8 compliant>
+# Made by Jefferson Smith and updated for Blender 2.92 by Anime Nyan
+
+from . import dopplerender
 
 bl_info = {
     "name": "Dopplerender",
     "description": "Smart sequence-rendering that automatically re-uses duplicate frames without re-rendering.",
-    "author": "Jefferson Smith",
-    "version": (0, 0, 3),
-    "blender": (2, 7, 8),
+    "author": "Anime Nyan, Jefferson Smith",
+    "version": (1, 0, 0),
+    "blender": (2, 92, 0),
     "location": "Properties > Scene > Render",
     "category": "Render",
     "warning": "",
     "support": 'COMMUNITY'
     }
 
-if "bpy" in locals():
-    import imp
-    if "dopplerender" in locals():
-        imp.reload(dopplerender)
-
-import bpy
-import os
-import tempfile
-from . import dopplerender
-
 
 def register():
-    bpy.utils.register_module(__name__)
-    bpy.types.Scene.dopplerender_thumbsize = bpy.props.FloatProperty(
-        name="Thumbnail Reduction",
-        description="Percentage scale of thumbnail size for frame comparison",
-        default=5,
-        min=1,
-        max=100,
-        subtype='PERCENTAGE')
-
-    bpy.types.Scene.dopplerender_thumbpath = bpy.props.StringProperty(
-        name="Thumbnail Render Directory",
-        subtype='FILE_PATH',
-        default=os.path.join(tempfile.gettempdir(), "dopthumbs", "tiny####.png"))
-
-    bpy.types.Scene.dopplerender_copytype = bpy.props.EnumProperty(
-        items=[('SYMLINK', "Symlink", "Symbolic Link duplicate frame files"),
-               ('COPY', "Copy", "Copy duplicate frame files")],
-        name="Frame copying",
-        description="Frame duplication method",
-        default='COPY'
-    )
+    dopplerender.register()
 
 
 def unregister():
-    del bpy.types.Scene.dopplerender_copytype
-    del bpy.types.Scene.dopplerender_thumbpath
-    del bpy.types.Scene.dopplerender_thumbsize
-    bpy.utils.unregister_module(__name__)
+    dopplerender.unregister()
