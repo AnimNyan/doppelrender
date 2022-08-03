@@ -127,7 +127,7 @@ def render_thumbnails(context, dopplerendertool):
         }
 
     context.scene.render.filepath = dopplerendertool.dopplerender_thumbpath
-    context.scene.render.resolution_percentage = dopplerendertool.dopplerender_thumbsize
+    context.scene.render.resolution_percentage = int(dopplerendertool.dopplerender_thumbsize)
     context.scene.cycles.samples = 20
     context.scene.cycles.use_animated_seed = False
 
@@ -219,7 +219,9 @@ def render_full(context, doppel_sets, dopplerendertool, preprocesstime=None):
 
     # Ensure there's a numbering pattern on the path; my renderpath was "/tmp/"
     fullrender_pathtemplate = os.path.join(old_fpath, "####.png")
-
+    
+    # Account for renderpaths that start with "//", which is a shortcut to the current directory
+    fullrender_pathtemplate = bpy.path.abspath(fullrender_pathtemplate)
 
     wm = bpy.context.window_manager
     tot = len(render_frames)
